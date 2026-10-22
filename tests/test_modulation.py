@@ -10,6 +10,8 @@ from amc_link.modulation import (
     psk8_to_bits,
     bits_to_qam16,
     qam16_to_bits,
+    bits_to_qam64,
+    qam64_to_bits,
 )
 
 
@@ -53,6 +55,23 @@ def test_16qam_round_trip(num_bits):
 
     np.testing.assert_array_equal(recovered, bits)
 
+@pytest.mark.parametrize("num_bits", [12, 120, 1200, 12000])
+def test_64qam_round_trip(num_bits):
+    rng = np.random.default_rng(42)
+    bits = rng.integers(0, 2, size=num_bits, dtype=np.uint8)
+
+    symbols = bits_to_qam64(bits)
+    recovered = qam64_to_bits(symbols)
+
+    np.testing.assert_array_equal(recovered, bits)
+
+
+def test_64qam_rejects_non_multiple_of_six_bits():
+    bits = np.array([0, 1, 0, 1, 1], dtype=np.uint8)
+
+    with pytest.raises(ValueError):
+        bits_to_qam64(bits)
+
 
 
 def test_qpsk_rejects_odd_number_of_bits():
@@ -73,6 +92,12 @@ def test_16qam_rejects_non_multiple_of_four_bits():
     with pytest.raises(ValueError):
         bits_to_qam16(bits)
 
+def test_64qam_rejects_non_multiple_of_six_bits():
+    bits = np.array([0, 1, 0, 1, 1], dtype=np.uint8)
+
+    with pytest.raises(ValueError):
+        bits_to_qam64(bits)
+
 
 
 @pytest.mark.parametrize("num_bits", [1200, 12000])
@@ -84,6 +109,7 @@ def test_average_symbol_energy(num_bits):
     qpsk = bits_to_qpsk(bits)
     psk8 = bits_to_psk8(bits)
     qam16 = bits_to_qam16(bits)
+    qam64 = bits_to_qam64(bits)
 
     assert np.isclose(np.mean(np.abs(bpsk) ** 2), 1.0)
     assert np.isclose(np.mean(np.abs(qpsk) ** 2), 1.0)
@@ -92,6 +118,11 @@ def test_average_symbol_energy(num_bits):
         np.mean(np.abs(qam16) ** 2),
         1.0,
         atol=0.03,
+    )
+    assert np.isclose(
+        np.mean(np.abs(qam64) ** 2),
+        1.0,
+        atol=0.04,
     )
 
 def test_16qam_constellation_average_energy():
@@ -106,10 +137,22 @@ def test_16qam_constellation_average_energy():
 
     assert np.isclose(np.mean(np.abs(symbols) ** 2), 1.0)
 
+def test_64qam_constellation_average_energy():
+    import itertools
+
+    bits = np.array(
+        list(itertools.product([0, 1], repeat=6)),
+        dtype=np.uint8,
+    ).reshape(-1)
+
+    symbols = bits_to_qam64(bits)
+
+    assert np.isclose(np.mean(np.abs(symbols) ** 2), 1.0)
+
 
 @pytest.mark.parametrize(
     "modulate",
-    [bits_to_bpsk, bits_to_qpsk, bits_to_psk8, bits_to_qam16],
+    [bits_to_bpsk, bits_to_qpsk, bits_to_psk8, bits_to_qam16, bits_to_qam64]
 )
 @pytest.mark.parametrize(
     "bits",
@@ -126,7 +169,7 @@ def test_modulation_rejects_invalid_bits(modulate, bits):
 
 @pytest.mark.parametrize(
     "demodulate",
-    [bpsk_to_bits, qpsk_to_bits, psk8_to_bits, qam16_to_bits],
+    [bpsk_to_bits, qpsk_to_bits, psk8_to_bits, qam16_to_bits, qam64_to_bits]
 )
 @pytest.mark.parametrize(
     "symbols",

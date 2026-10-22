@@ -133,3 +133,81 @@ def qam16_to_bits(symbols: np.ndarray) -> np.ndarray:
     bits[3::4] = q_bits[:, 1]
 
     return bits
+
+def bits_to_qam64(bits: np.ndarray) -> np.ndarray:
+    """Gray-coded square 64-QAM; bits are grouped I MSB first, then Q MSB first."""
+    bits = _validate_bits(bits)
+
+    if bits.size % 6 != 0:
+        raise ValueError("64-QAM requires a multiple of 6 bits.")
+
+    groups = bits.reshape(-1, 6)
+
+    def bits_to_level(level_bits: np.ndarray) -> np.ndarray:
+        sign = 1.0 - 2.0 * level_bits[:, 0]
+
+        # Decode the last two Gray-coded bits into a binary magnitude index.
+        gray = (
+            2 * level_bits[:, 1].astype(np.int64)
+            + level_bits[:, 2].astype(np.int64)
+        )
+
+        binary = gray.copy()
+        binary ^= binary >> 1
+
+        magnitude = 7.0 - 2.0 * binary
+
+        return sign * magnitude
+
+    i = bits_to_level(groups[:, :3])
+    q = bits_to_level(groups[:, 3:])
+
+    return (i + 1j * q) / np.sqrt(42.0)
+
+
+def qam64_to_bits(symbols: np.ndarray) -> np.ndarray:
+    """Hard-decision Gray-coded square 64-QAM demodulation."""
+    symbols = _validate_symbols(symbols)
+
+    i = symbols.real * np.sqrt(42.0)
+    q = symbols.imag * np.sqrt(42.0)
+
+    def level_to_bits(values: np.ndarray) -> np.ndarray:
+        # Quantize to the nearest level: -7, -5, -3, -1, 1, 3, 5, 7.
+        level_index = np.clip(
+            np.floor((values + 8.0) / 2.0),
+            0,
+            7,
+        ).astype(np.int64)
+
+        # Recover the sign bit and magnitude index.
+        sign_bit = (level_index < 4).astype(np.uint8)
+
+        magnitude_index = np.where(
+            level_index < 4,
+            level_index,
+            7 - level_index,
+        )
+
+        # Encode the magnitude index into Gray code.
+        gray = magnitude_index ^ (magnitude_index >> 1)
+
+        bits = np.empty((values.size, 3), dtype=np.uint8)
+        bits[:, 0] = sign_bit
+        bits[:, 1] = (gray >> 1) & 1
+        bits[:, 2] = gray & 1
+
+        return bits
+
+    i_bits = level_to_bits(i)
+    q_bits = level_to_bits(q)
+
+    bits = np.empty(6 * symbols.size, dtype=np.uint8)
+    bits[0::6] = i_bits[:, 0]
+    bits[1::6] = i_bits[:, 1]
+    bits[2::6] = i_bits[:, 2]
+    bits[3::6] = q_bits[:, 0]
+    bits[4::6] = q_bits[:, 1]
+    bits[5::6] = q_bits[:, 2]
+
+    return bits
